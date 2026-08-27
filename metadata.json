@@ -1,0 +1,10 @@
+{
+  "name": "Remix EduSync",
+  "description": "A unified school platform for students to track tasks and teachers to share targeted announcements, verify homework photo proofs, and manage calendars.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

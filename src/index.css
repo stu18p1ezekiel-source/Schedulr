@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Source Serif 4", "Times New Roman", Georgia, serif;
+  --font-sans: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-futura: Futura, "Futura PT", "Century Gothic", "Trebuchet MS", sans-serif;
+  
+  --color-primary: #082142;
+  --color-primary-container: #112f5a;
+  --color-secondary: #139a91;
+  --color-secondary-container: #d2f2ef;
+  --color-on-secondary-container: #074e48;
+  --color-surface: #f4f9f8;
+  --color-surface-container: #e6f3f1;
+  --color-surface-container-low: #edf7f6;
+  --color-surface-container-high: #d8ecea;
+  --color-surface-container-lowest: #ffffff;
+  --color-on-surface: #082142;
+  --color-on-surface-variant: #40535e;
+  --color-outline-variant: #c3e2de;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+}
+
+h1, h2, h3, .font-headline {
+  font-family: var(--font-serif);
+}
+
+/* Custom BBS academic scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #b2d9d4;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #139a91;
+}
