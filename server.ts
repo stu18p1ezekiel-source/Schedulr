@@ -11,23 +11,30 @@ async function startServer() {
 
   // API endpoint for Gemini AI assistance
   app.post("/api/ai/generate-details", async (req, res) => {
-    try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return res.status(400).json({ 
-          error: "GEMINI_API_KEY is not set. Please set the GEMINI_API_KEY environment variable in Settings > Secrets." 
-        });
-      }
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({
+        error: "GEMINI_API_KEY is not set. Please set the GEMINI_API_KEY environment variable in Settings."
+      });
+    }
 
-      const { prompt, title, category, targetAudience, currentText, contextType } = req.body;
-      
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
+    const { prompt, title, category, targetAudience, currentText, contextType } = req.body;
+
+    // Fixed lines 24–30: Simplified initialization without unsupported httpOptions header structures
+    const ai = new GoogleGenAI({ apiKey });
+
+    // Ensure model parameter uses a valid SDK model string (e.g. "gemini-2.5-flash")
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    return res.json({ result: response.text });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
       });
 
       const systemInstruction = `You are an academic writing assistant for faculty and teachers at Bina Bangsa School (BBS).
