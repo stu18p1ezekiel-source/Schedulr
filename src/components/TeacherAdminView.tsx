@@ -33,7 +33,8 @@ import {
   FileCheck,
   Maximize2,
   FileText,
-  HelpCircle
+  HelpCircle,
+  BookOpen
 } from 'lucide-react';
 import { EventItem, HomeworkItem, TeacherPost, Student, Teacher, TargetAudience, SubmissionStatus } from '../types';
 import { CLASSES, CLASS_DIVISIONS, TEACHERS } from '../mockData';
@@ -76,7 +77,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
 
   // Homework Review Sub-tabs: 'reviews' | 'publish' | 'assignments'
   const [hwSubTab, setHwSubTab] = useState<'reviews' | 'publish' | 'assignments'>('reviews');
-  const [submissionFilter, setSubmissionFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('pending');
+  const [submissionFilter, setSubmissionFilter] = useState<'all' | 'pending' | 'approved' | 'declined' | 'awaiting'>('pending');
   const [submissionSearch, setSubmissionSearch] = useState('');
   
   // Lightbox Modal for Full-Resolution Photo Proof Inspection
@@ -1403,50 +1404,61 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
 
       {/* Tab 4: Homework & Student Proofs Manager */}
       {adminTab === 'homework' && (() => {
-        // Extract all individual student submissions
+        // Build the complete list of all items for the Teacher verification & proof feed
+        // This includes:
+        // 1. All student submissions (with student details and photo proofs)
+        // 2. ALL newly created and active course assignments (so newly added assignments are immediately visible and manageable)
         const submissionsList: HomeworkItem[] = [];
+        
         homeworkList.forEach(hw => {
-          if (hw.submissions && Object.keys(hw.submissions).length > 0) {
-            Object.values(hw.submissions).forEach(sub => {
-              if (sub.proofImageUrl || sub.submissionStatus !== 'not_submitted') {
-                submissionsList.push({
-                  ...hw,
-                  id: hw.id,
-                  submittedByStudentId: sub.studentId,
-                  submittedByStudentName: sub.studentName,
-                  submittedByStudentClass: sub.studentClass || hw.targetClass,
-                  submittedByStudentAvatar: sub.studentAvatar,
-                  submissionStatus: sub.submissionStatus,
-                  completed: sub.completed,
-                  proofImageUrl: sub.proofImageUrl,
-                  studentNotes: sub.studentNotes,
-                  submittedAt: sub.submittedAt,
-                  teacherFeedback: sub.teacherFeedback,
-                  reviewedByTeacherName: sub.reviewedByTeacherName,
-                  reviewedAt: sub.reviewedAt,
-                });
-              }
+          const studentSubs = hw.submissions ? Object.values(hw.submissions) : [];
+          const validStudentSubs = studentSubs.filter(sub => Boolean(sub.proofImageUrl) || (sub.submissionStatus && sub.submissionStatus !== 'not_submitted'));
+
+          if (validStudentSubs.length > 0) {
+            validStudentSubs.forEach(sub => {
+              submissionsList.push({
+                ...hw,
+                id: hw.id,
+                submittedByStudentId: sub.studentId,
+                submittedByStudentName: sub.studentName,
+                submittedByStudentClass: sub.studentClass || hw.targetClass,
+                submittedByStudentAvatar: sub.studentAvatar,
+                submissionStatus: sub.submissionStatus,
+                completed: sub.completed,
+                proofImageUrl: sub.proofImageUrl,
+                studentNotes: sub.studentNotes,
+                submittedAt: sub.submittedAt,
+                teacherFeedback: sub.teacherFeedback,
+                reviewedByTeacherName: sub.reviewedByTeacherName,
+                reviewedAt: sub.reviewedAt,
+              });
             });
-          } else if (Boolean(hw.proofImageUrl) || hw.submissionStatus === 'pending_approval' || hw.submissionStatus === 'approved' || hw.submissionStatus === 'declined') {
-            submissionsList.push(hw);
+          } else {
+            // Include newly created or active assignment directly!
+            submissionsList.push({
+              ...hw,
+              submissionStatus: hw.submissionStatus || (hw.completed ? 'approved' : 'not_submitted'),
+            });
           }
         });
 
         const pendingList = submissionsList.filter(hw => hw.submissionStatus === 'pending_approval');
         const approvedList = submissionsList.filter(hw => hw.submissionStatus === 'approved');
         const declinedList = submissionsList.filter(hw => hw.submissionStatus === 'declined');
+        const awaitingList = submissionsList.filter(hw => !hw.submissionStatus || hw.submissionStatus === 'not_submitted');
 
         const filteredSubmissions = submissionsList.filter(hw => {
           if (submissionFilter === 'pending' && hw.submissionStatus !== 'pending_approval') return false;
           if (submissionFilter === 'approved' && hw.submissionStatus !== 'approved') return false;
           if (submissionFilter === 'declined' && hw.submissionStatus !== 'declined') return false;
+          if (submissionFilter === 'awaiting' && (hw.submissionStatus !== 'not_submitted' && hw.submissionStatus !== undefined)) return false;
           
           if (submissionSearch.trim()) {
             const q = submissionSearch.toLowerCase();
             const studentMatch = (hw.submittedByStudentName || '').toLowerCase().includes(q);
             const titleMatch = hw.title.toLowerCase().includes(q);
             const subjectMatch = hw.subject.toLowerCase().includes(q);
-            const classMatch = (hw.targetClass || '').toLowerCase().includes(q);
+            const classMatch = (hw.targetClass || hw.submittedByStudentClass || '').toLowerCase().includes(q);
             return studentMatch || titleMatch || subjectMatch || classMatch;
           }
           return true;
@@ -1459,7 +1471,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
           setPlacedConfirmation({
             type: 'homework',
             title: 'Submission Approved',
-            message: `"${hw.title}" submitted by ${hw.submittedByStudentName || 'Student'} has been verified and marked completed.`,
+            message: `"${hw.title}" ${hw.submittedByStudentName ? `submitted by ${hw.submittedByStudentName}` : ''} has been verified and marked completed.`,
             target: hw.submittedByStudentClass || hw.targetClass ? `Class ${hw.submittedByStudentClass || hw.targetClass}` : undefined,
           });
         };
@@ -1495,7 +1507,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                   }`}
                 >
                   <Camera className="w-4 h-4" />
-                  <span>Student Photo Submissions</span>
+                  <span>Assignments & Proofs ({submissionsList.length})</span>
                   {pendingList.length > 0 && (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-400 text-amber-950">
                       {pendingList.length} Pending
@@ -1526,7 +1538,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                   }`}
                 >
                   <CheckSquare className="w-4 h-4" />
-                  <span>All Active Assignments ({homeworkList.length})</span>
+                  <span>All Active Course Assignments ({homeworkList.length})</span>
                 </button>
               </div>
 
@@ -1552,7 +1564,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                         }`}
                       >
                         <Clock className="w-3.5 h-3.5" />
-                        <span>Pending Review ({pendingList.length})</span>
+                        <span>Pending Proofs ({pendingList.length})</span>
                       </button>
 
                       <button
@@ -1580,6 +1592,18 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                       </button>
 
                       <button
+                        onClick={() => setSubmissionFilter('awaiting')}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                          submissionFilter === 'awaiting'
+                            ? 'bg-[#139a91] text-white shadow-xs font-bold'
+                            : 'text-[#40535e] hover:text-[#082142]'
+                        }`}
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Awaiting Proof ({awaitingList.length})</span>
+                      </button>
+
+                      <button
                         onClick={() => setSubmissionFilter('all')}
                         className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                           submissionFilter === 'all'
@@ -1587,7 +1611,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                             : 'text-[#40535e] hover:text-[#082142]'
                         }`}
                       >
-                        All Submissions ({submissionsList.length})
+                        All ({submissionsList.length})
                       </button>
                     </div>
 
@@ -1596,7 +1620,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                       <Search className="w-4 h-4 text-[#75777f] absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
-                        placeholder="Search student or assignment..."
+                        placeholder="Search student, class, or assignment..."
                         value={submissionSearch}
                         onChange={(e) => setSubmissionSearch(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 rounded-xl text-xs bg-[#f4f9f8] border border-[#cbe6e3] text-[#082142] placeholder-[#75777f] focus:outline-none focus:ring-2 focus:ring-[#139a91]"
@@ -1609,11 +1633,11 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                 {filteredSubmissions.length === 0 ? (
                   <div className="bg-white rounded-2xl border border-[#cbe6e3] p-12 text-center text-[#75777f] shadow-xs">
                     <CheckCircle2 className="w-14 h-14 mx-auto text-[#139a91] mb-3 opacity-40" />
-                    <h4 className="text-lg font-serif font-bold text-[#082142]">No homework submissions in this view</h4>
+                    <h4 className="text-lg font-serif font-bold text-[#082142]">No assignments or submissions in this view</h4>
                     <p className="text-xs text-[#40535e] mt-1 max-w-md mx-auto">
                       {submissionFilter === 'pending'
                         ? 'All student homework proofs have been reviewed! When students take and submit new photo proof, they will appear here for verification.'
-                        : 'Try switching filters or search terms.'}
+                        : 'Try switching filters or publishing a new assignment above.'}
                     </p>
                   </div>
                 ) : (
@@ -1622,6 +1646,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                       const isPending = hw.submissionStatus === 'pending_approval';
                       const isApproved = hw.submissionStatus === 'approved';
                       const isDeclined = hw.submissionStatus === 'declined';
+                      const isAwaitingProof = !hw.submissionStatus || hw.submissionStatus === 'not_submitted';
                       const cardKey = `${hw.id}-${hw.submittedByStudentId || 'main'}`;
 
                       return (
@@ -1633,29 +1658,37 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                               ? 'border-amber-300 ring-1 ring-amber-200 bg-gradient-to-b from-white to-amber-50/20'
                               : isApproved
                               ? 'border-emerald-200 bg-emerald-50/10'
-                              : 'border-red-200 bg-red-50/10'
+                              : isDeclined
+                              ? 'border-red-200 bg-red-50/10'
+                              : 'border-[#cbe6e3] bg-gradient-to-b from-white to-[#edf7f6]/40'
                           }`}
                         >
                           <div className="space-y-4">
-                            {/* Student Profile Header */}
+                            {/* Student Profile / Target Class Header */}
                             <div className="flex items-start justify-between gap-3 border-b border-[#cbe6e3]/60 pb-3">
                               <div className="flex items-center gap-3">
-                                <img
-                                  src={hw.submittedByStudentAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                                  alt={hw.submittedByStudentName || 'Student'}
-                                  className="w-10 h-10 rounded-full object-cover border-2 border-[#139a91] shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
+                                {hw.submittedByStudentName ? (
+                                  <img
+                                    src={hw.submittedByStudentAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                                    alt={hw.submittedByStudentName}
+                                    className="w-10 h-10 rounded-full object-cover border-2 border-[#139a91] shrink-0"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-xl bg-[#139a91] text-white flex items-center justify-center font-bold shrink-0 shadow-2xs">
+                                    <BookOpen className="w-5 h-5" />
+                                  </div>
+                                )}
                                 <div>
                                   <h4 className="text-sm font-bold text-[#082142]">
-                                    {hw.submittedByStudentName || 'Nicholas Tan'}
+                                    {hw.submittedByStudentName ? hw.submittedByStudentName : `Course Assignment (${hw.targetClass ? `Class ${hw.targetClass}` : 'All Classes'})`}
                                   </h4>
                                   <div className="flex items-center gap-2 text-[11px] text-[#75777f]">
                                     <span className="font-semibold text-[#139a91]">
-                                      Class {hw.submittedByStudentClass || hw.targetClass || 'JC1-A'}
+                                      {hw.submittedByStudentClass ? `Class ${hw.submittedByStudentClass}` : hw.targetClass ? `Target: Class ${hw.targetClass}` : 'Target: School-wide'}
                                     </span>
                                     <span>•</span>
-                                    <span>{hw.submittedAt || 'Today'}</span>
+                                    <span>{hw.submittedAt || `Assigned • Due ${hw.dueDate}`}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1680,6 +1713,12 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                                     <span>Revision Needed</span>
                                   </span>
                                 )}
+                                {isAwaitingProof && (
+                                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[#edf7f6] text-[#074e48] border border-[#cbe6e3] flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-[#139a91]" />
+                                    <span>Awaiting Proof</span>
+                                  </span>
+                                )}
 
                                 <button
                                   id={`btn-delete-hw-review-${cardKey}`}
@@ -1688,7 +1727,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                                       type: 'homework',
                                       id: hw.id,
                                       title: hw.title,
-                                      subtitle: `${hw.subject} • Due ${hw.dueDate} (Class ${hw.targetClass || 'JC1-A'})`,
+                                      subtitle: `${hw.subject} • Due ${hw.dueDate} (${hw.targetClass || 'All Classes'})`,
                                     });
                                   }}
                                   className="p-1.5 text-[#75777f] hover:text-[#ba1a1a] hover:bg-[#ffdad6]/50 rounded-lg transition-colors cursor-pointer"
@@ -1706,6 +1745,11 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                                   {hw.subject}
                                 </span>
                                 <span className="text-xs text-[#75777f]">Due: {hw.dueDate}</span>
+                                {hw.targetClass && (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white text-[#082142] border border-[#cbe6e3]">
+                                    Class {hw.targetClass}
+                                  </span>
+                                )}
                               </div>
                               <h5 className="text-base font-bold text-[#082142]">{hw.title}</h5>
                               {hw.description && (
@@ -1723,7 +1767,7 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                               </div>
                             )}
 
-                            {/* Photo Proof Box with Click to Zoom */}
+                            {/* Photo Proof Box with Click to Zoom or Awaiting Notice */}
                             {hw.proofImageUrl ? (
                               <div className="space-y-1.5">
                                 <div className="flex items-center justify-between text-xs text-[#75777f]">
@@ -1778,8 +1822,11 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-4 rounded-xl border border-dashed border-[#cbe6e3] text-center text-xs text-[#75777f] bg-[#f4f9f8]">
-                                No photo attached
+                              <div className="p-3.5 rounded-xl border border-dashed border-[#cbe6e3] text-center text-xs text-[#75777f] bg-[#f4f9f8] space-y-1">
+                                <p className="font-semibold text-[#082142]">Active Assignment • Awaiting Student Proof</p>
+                                <p className="text-[11px] text-[#75777f]">
+                                  Students will snap photo proof to submit. When submitted, the proof image will appear here.
+                                </p>
                               </div>
                             )}
 
@@ -2063,12 +2110,33 @@ export const TeacherAdminView: React.FC<TeacherAdminViewProps> = ({
                       </h4>
                     </div>
 
-                    <button
-                      onClick={() => setLightboxProof(null)}
-                      className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer"
-                    >
-                      <X className="w-6 h-6" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        id="btn-lightbox-delete-hw"
+                        onClick={() => {
+                          setDeleteConfirm({
+                            type: 'homework',
+                            id: lightboxProof.homeworkId,
+                            title: lightboxProof.homeworkTitle,
+                            subtitle: `${lightboxProof.subject} (Class ${lightboxProof.studentClass || 'JC1-A'})`,
+                          });
+                          setLightboxProof(null);
+                        }}
+                        className="px-3 py-1.5 rounded-full bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-400/40 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                        title="Delete this homework assignment (Faculty only)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Delete</span>
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-800 text-white text-[10px]">✕</span>
+                      </button>
+
+                      <button
+                        onClick={() => setLightboxProof(null)}
+                        className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+                      >
+                        <X className="w-6 h-6" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Photo Body */}

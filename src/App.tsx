@@ -905,6 +905,8 @@ export default function App() {
                 onToggleComplete={handleToggleHomework}
                 onOpenAddHomework={() => setIsAddHomeworkOpen(true)}
                 onSubmitProof={handleSubmitProof}
+                isTeacherMode={isTeacherMode}
+                onDeleteHomework={handleDeleteHomework}
               />
             </div>
           )}

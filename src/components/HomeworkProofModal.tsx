@@ -14,7 +14,8 @@ import {
   Eye,
   Check,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Trash2
 } from 'lucide-react';
 import { HomeworkItem, Student } from '../types';
 
@@ -24,6 +25,8 @@ interface HomeworkProofModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmitProof: (homeworkId: string, proofImageUrl: string, studentNotes?: string) => void;
+  isTeacherMode?: boolean;
+  onDeleteHomework?: (id: string) => void;
 }
 
 const SAMPLE_PROOF_PHOTOS = [
@@ -55,6 +58,8 @@ export const HomeworkProofModal: React.FC<HomeworkProofModalProps> = ({
   isOpen,
   onClose,
   onSubmitProof,
+  isTeacherMode = false,
+  onDeleteHomework,
 }) => {
   const [photoMode, setPhotoMode] = useState<'camera' | 'upload' | 'samples'>('upload');
   const [proofImage, setProofImage] = useState<string>('');
@@ -62,6 +67,7 @@ export const HomeworkProofModal: React.FC<HomeworkProofModalProps> = ({
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -242,8 +248,8 @@ export const HomeworkProofModal: React.FC<HomeworkProofModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[#edf7f6] px-6 py-5 border-b border-[#cbe6e3] flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="bg-[#edf7f6] px-6 py-5 border-b border-[#cbe6e3] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="w-10 h-10 rounded-xl bg-[#139a91] text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
               <Camera className="w-5 h-5" />
             </div>
@@ -253,6 +259,11 @@ export const HomeworkProofModal: React.FC<HomeworkProofModalProps> = ({
                   {homework.subject}
                 </span>
                 <span className="text-xs text-[#75777f]">Due: {homework.dueDate}</span>
+                {homework.targetClass && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white text-[#082142] border border-[#cbe6e3]">
+                    Class {homework.targetClass}
+                  </span>
+                )}
               </div>
               <h3 className="text-lg font-bold font-serif text-[#082142] truncate mt-0.5">
                 {homework.title}
@@ -260,17 +271,82 @@ export const HomeworkProofModal: React.FC<HomeworkProofModalProps> = ({
             </div>
           </div>
 
-          <button 
-            id="btn-close-proof-modal"
-            onClick={() => {
-              stopCameraStream();
-              onClose();
-            }}
-            className="p-2 rounded-full text-[#75777f] hover:text-[#082142] hover:bg-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Teacher Only Delete X / Trash Button */}
+            {isTeacherMode && onDeleteHomework && (
+              <button 
+                id="btn-delete-hw-detail-teacher"
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-3 py-1.5 rounded-full bg-red-50 hover:bg-red-600 text-red-700 hover:text-white border border-red-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs group"
+                title="Delete this homework assignment (Faculty only)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Delete</span>
+                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-200 text-red-900 group-hover:bg-red-800 group-hover:text-white text-[10px] font-black">
+                  ✕
+                </span>
+              </button>
+            )}
+
+            <button 
+              id="btn-close-proof-modal"
+              type="button"
+              onClick={() => {
+                stopCameraStream();
+                onClose();
+              }}
+              className="p-2 rounded-full text-[#75777f] hover:text-[#082142] hover:bg-white transition-colors cursor-pointer"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {/* Teacher Delete Confirmation Warning Banner */}
+        {showDeleteConfirm && (
+          <div className="bg-red-50 border-b-2 border-red-300 p-4 sm:p-5 animate-in slide-in-from-top-2 duration-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3 text-xs text-red-900">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-sm text-red-950">
+                    Delete Assignment Permanently?
+                  </p>
+                  <p className="text-red-800 text-xs mt-0.5">
+                    Are you sure you want to delete <strong className="text-red-950">"{homework.title}"</strong>? This will remove it from all student feeds and delete all student submissions.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-3.5 py-1.5 rounded-full bg-white border border-gray-300 text-[#40535e] text-xs font-semibold hover:bg-gray-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  id="btn-confirm-delete-hw-modal"
+                  onClick={() => {
+                    if (onDeleteHomework) {
+                      onDeleteHomework(homework.id);
+                    }
+                    stopCameraStream();
+                    onClose();
+                  }}
+                  className="px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Yes, Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Status Callout Banners */}
         {isApproved && (

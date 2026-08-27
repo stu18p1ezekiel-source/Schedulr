@@ -16,7 +16,9 @@ import {
   Sparkles,
   AlertTriangle,
   FileCheck,
-  MessageSquare
+  MessageSquare,
+  Trash2,
+  X
 } from 'lucide-react';
 import { HomeworkItem, Student } from '../types';
 import { HomeworkProofModal } from './HomeworkProofModal';
@@ -27,6 +29,8 @@ interface HomeworkViewProps {
   onToggleComplete: (id: string) => void;
   onOpenAddHomework: () => void;
   onSubmitProof: (homeworkId: string, proofImageUrl: string, studentNotes?: string) => void;
+  isTeacherMode?: boolean;
+  onDeleteHomework?: (id: string) => void;
 }
 
 export const HomeworkView: React.FC<HomeworkViewProps> = ({
@@ -35,6 +39,8 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
   onToggleComplete,
   onOpenAddHomework,
   onSubmitProof,
+  isTeacherMode = false,
+  onDeleteHomework,
 }) => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'review' | 'completed'>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
@@ -442,6 +448,24 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
                       </>
                     )}
                   </button>
+
+                  {/* Teacher-Only Quick Delete Button */}
+                  {isTeacherMode && onDeleteHomework && (
+                    <button
+                      type="button"
+                      id={`btn-delete-hw-card-${hw.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Delete homework assignment "${hw.title}"?`)) {
+                          onDeleteHomework(hw.id);
+                        }
+                      }}
+                      className="p-2 rounded-full text-red-400 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors cursor-pointer"
+                      title="Delete assignment (Teacher only)"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -449,12 +473,19 @@ export const HomeworkView: React.FC<HomeworkViewProps> = ({
         )}
       </div>
 
-      {/* Homework Photo Proof Modal */}
+      {/* Homework Photo Proof & Detail Modal */}
       {proofModalItem && (
         <HomeworkProofModal
           isOpen={Boolean(proofModalItem)}
           homework={proofModalItem}
           currentStudent={currentStudent}
+          isTeacherMode={isTeacherMode}
+          onDeleteHomework={(id) => {
+            if (onDeleteHomework) {
+              onDeleteHomework(id);
+            }
+            setProofModalItem(null);
+          }}
           onClose={() => setProofModalItem(null)}
           onSubmitProof={(id, url, notes) => {
             onSubmitProof(id, url, notes);
