@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   INITIAL_STUDENTS, 
   TEACHERS, 
@@ -16,6 +16,22 @@ import {
   TeacherPost, 
   ActiveTab 
 } from './types';
+import {
+  fetchServerState,
+  connectLiveSync,
+  createEventApi,
+  deleteEventApi,
+  createHomeworkApi,
+  deleteHomeworkApi,
+  toggleHomeworkApi,
+  submitHomeworkProofApi,
+  reviewSubmissionApi,
+  createPostApi,
+  deletePostApi,
+  togglePostLikeApi,
+  updateStudentApi,
+  AppState,
+} from './services/api';
 
 // Components
 import { Sidebar } from './components/Sidebar';
@@ -131,6 +147,9 @@ export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
 
+  // Multi-Device Live Synchronization Connection State
+  const [isLiveSynced, setIsLiveSynced] = useState<boolean>(true);
+
   // Persistence: Student Login State (remembering name and class)
   const [students, setStudents] = useState<Student[]>(() => {
     try {
@@ -182,7 +201,7 @@ export default function App() {
   const [isAddHomeworkOpen, setIsAddHomeworkOpen] = useState<boolean>(false);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
 
-  // Application Data State with LocalStorage Persistence
+  // Application Data State with Local Storage and Server Database Sync
   const [events, setEvents] = useState<EventItem[]>(() => {
     try {
       const saved = localStorage.getItem('bbs_events');
@@ -229,7 +248,58 @@ export default function App() {
   // Selected Month Date for Calendar (August 27, 2026)
   const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(new Date(2026, 7, 27)); // Aug 27, 2026
 
-  // Save to LocalStorage with robust error recovery
+  // Real-time Database Synchronization Effect
+  const applyServerState = useCallback((state: AppState) => {
+    if (!state) return;
+    if (Array.isArray(state.events)) {
+      setEvents(state.events);
+    }
+    if (Array.isArray(state.homework)) {
+      setHomeworkList(state.homework.map(normalizeHomeworkItem));
+    }
+    if (Array.isArray(state.posts)) {
+      setPosts(state.posts);
+    }
+    if (Array.isArray(state.students) && state.students.length > 0) {
+      setStudents(state.students);
+    }
+  }, []);
+
+  useEffect(() => {
+    // 1. Initial State Fetch from Server
+    fetchServerState().then(initialData => {
+      if (initialData) {
+        applyServerState(initialData);
+      }
+    });
+
+    // 2. Connect Live Stream (SSE) for instant cross-device updates
+    const cleanupSync = connectLiveSync(
+      (updatedState) => {
+        applyServerState(updatedState);
+        setIsLiveSynced(true);
+      },
+      (connected) => {
+        setIsLiveSynced(connected);
+      }
+    );
+
+    // 3. Periodic Poll fallback every 5s in case mobile sleeps
+    const pollInterval = setInterval(() => {
+      fetchServerState().then(data => {
+        if (data) {
+          applyServerState(data);
+        }
+      });
+    }, 5000);
+
+    return () => {
+      cleanupSync();
+      clearInterval(pollInterval);
+    };
+  }, [applyServerState]);
+
+  // Save to LocalStorage for offline cache
   useEffect(() => {
     if (currentStudent) {
       try {
@@ -253,7 +323,6 @@ export default function App() {
       localStorage.setItem('bbs_homework', JSON.stringify(homeworkList));
     } catch (err) {
       console.warn('Failed to save homework to storage (quota exceeded):', err);
-      // Fallback: If quota exceeded due to large embedded images, save lean version without base64 strings
       try {
         const leanHomework = homeworkList.map(h => {
           const cleanSubs = { ...(h.submissions || {}) };
@@ -304,9 +373,11 @@ export default function App() {
       .map((hw) => getHomeworkForStudent(hw, currentStudent?.id));
   }, [homeworkList, currentStudent]);
 
-  // Homework Handlers with individual per-student submission tracking
+  // Homework Handlers with individual per-student submission tracking & Real-time Server Sync
   const handleToggleHomework = (id: string) => {
     const studentId = currentStudent?.id;
+    
+    // 1. Optimistic local state update
     setHomeworkList(prev =>
       prev.map(item => {
         if (item.id !== id) return item;
@@ -344,6 +415,11 @@ export default function App() {
         };
       })
     );
+
+    // 2. Broadcast change to all devices via server
+    if (studentId) {
+      toggleHomeworkApi(id, studentId, currentStudent?.name, currentStudent?.classId, currentStudent?.avatarUrl);
+    }
   };
 
   const handleSubmitProof = (homeworkId: string, proofImageUrl: string, studentNotes?: string) => {
@@ -366,6 +442,7 @@ export default function App() {
       submittedAt: currentTimestamp,
     };
 
+    // 1. Optimistic update
     setHomeworkList(prev =>
       prev.map(item => {
         if (item.id !== homeworkId) return item;
@@ -394,11 +471,21 @@ export default function App() {
       })
     );
 
+    // 2. Broadcast change to all devices via server
+    submitHomeworkProofApi(homeworkId, {
+      studentId,
+      studentName,
+      studentClass,
+      studentAvatar,
+      proofImageUrl,
+      studentNotes,
+    });
+
     showNotification({
       type: 'homework',
       title: 'Homework Proof Submitted',
       message: `Photo proof for "${targetHw?.title || 'Assignment'}" has been submitted for teacher verification.`,
-      detail: 'Your teacher will review your submission and approve completion.',
+      detail: 'Your teacher will review your submission on their device and approve completion.',
     });
   };
 
@@ -406,6 +493,7 @@ export default function App() {
     const currentTimestamp = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' • ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     const targetHw = homeworkList.find(h => h.id === homeworkId);
 
+    // 1. Optimistic update
     setHomeworkList(prev =>
       prev.map(item => {
         if (item.id !== homeworkId) return item;
@@ -438,6 +526,14 @@ export default function App() {
       })
     );
 
+    // 2. Broadcast change to all devices via server
+    reviewSubmissionApi(homeworkId, {
+      status,
+      feedback,
+      studentId,
+      teacherName: currentTeacher?.name,
+    });
+
     showNotification({
       type: 'homework',
       title: status === 'approved' ? 'Submission Approved' : 'Revision Requested',
@@ -454,7 +550,12 @@ export default function App() {
       id: `hw-${Date.now()}`,
       completed: false,
     };
+
+    // 1. Optimistic update
     setHomeworkList(prev => [newItem, ...prev]);
+
+    // 2. Broadcast change to all devices via server
+    createHomeworkApi(newHwData);
 
     showNotification({
       type: 'homework',
@@ -466,9 +567,10 @@ export default function App() {
 
   const handleDeleteHomework = (id: string) => {
     setHomeworkList(prev => prev.filter(item => item.id !== id));
+    deleteHomeworkApi(id);
   };
 
-  // Event Handlers
+  // Event Handlers with Real-time Multi-device Sync
   const handleAddEvent = (newEventData: Omit<EventItem, 'id'>) => {
     const newItem: EventItem = {
       ...newEventData,
@@ -521,6 +623,9 @@ export default function App() {
 
     setPosts(prev => [eventPostItem, ...prev]);
 
+    // Broadcast event + auto-generated post to all devices via server
+    createEventApi(newEventData, true);
+
     let audienceDetail = 'Target: All Classes (School-wide)';
     if (newEventData.targetAudience === 'CLASS') {
       audienceDetail = `Target: Class ${newEventData.targetClass}`;
@@ -533,7 +638,7 @@ export default function App() {
     showNotification({
       type: 'event',
       title: 'Event & Bulletin post placed',
-      message: `"${newEventData.title}" is now added to the BBS Calendar & Posts feed.`,
+      message: `"${newEventData.title}" is now added to the BBS Calendar & Posts feed across all devices.`,
       detail: `${audienceDetail} • Event Date: ${newEventData.date}`,
     });
   };
@@ -545,6 +650,7 @@ export default function App() {
     if (selectedEvent?.id === id) {
       setSelectedEvent(null);
     }
+    deleteEventApi(id);
     showNotification({
       type: 'event',
       title: 'Event Removed',
@@ -553,7 +659,7 @@ export default function App() {
     });
   };
 
-  // Post Handlers
+  // Post Handlers with Multi-Device Sync
   const handleAddPost = (newPostData: Omit<TeacherPost, 'id' | 'likesCount' | 'likedByCurrentUser'>) => {
     const newItem: TeacherPost = {
       ...newPostData,
@@ -563,6 +669,9 @@ export default function App() {
     };
     setPosts(prev => [newItem, ...prev]);
 
+    // Broadcast post to all devices via server
+    createPostApi(newPostData);
+
     const targetDesc = newPostData.targetClass && newPostData.targetClass !== 'ALL'
       ? `Class ${newPostData.targetClass}`
       : 'All Classes';
@@ -570,7 +679,7 @@ export default function App() {
     showNotification({
       type: 'post',
       title: 'Post has been placed',
-      message: `"${newPostData.title}" is now published on the student bulletin.`,
+      message: `"${newPostData.title}" is now published on the student bulletin across all devices.`,
       detail: `Audience: ${targetDesc} • Category: ${newPostData.category.toUpperCase()}`,
     });
   };
@@ -579,6 +688,7 @@ export default function App() {
     if (!isTeacherMode) return;
     const deletedItem = posts.find(item => item.id === id);
     setPosts(prev => prev.filter(item => item.id !== id));
+    deletePostApi(id);
     showNotification({
       type: 'post',
       title: 'Post Removed',
@@ -601,6 +711,7 @@ export default function App() {
         return p;
       })
     );
+    togglePostLikeApi(postId);
   };
 
   // Student & Teacher Login Handlers
@@ -688,6 +799,7 @@ export default function App() {
               isTeacherMode ? () => setActiveTab('admin') : undefined
             }
             isTeacherMode={isTeacherMode}
+            isLiveSynced={isLiveSynced}
             onToggleTeacherMode={() => {
               if (isTeacherMode) {
                 setIsTeacherMode(false);

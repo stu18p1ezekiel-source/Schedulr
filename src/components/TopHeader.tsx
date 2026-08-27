@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, CheckSquare, CalendarPlus, Shield, User, Bell, Sparkles, LogOut } from 'lucide-react';
+import { Plus, CheckSquare, CalendarPlus, Shield, User, Bell, Sparkles, LogOut, Radio, RefreshCw } from 'lucide-react';
 import { ActiveTab, Student, Teacher } from '../types';
 
 interface TopHeaderProps {
@@ -13,6 +13,7 @@ interface TopHeaderProps {
   isTeacherMode: boolean;
   onToggleTeacherMode: () => void;
   onLogout?: () => void;
+  isLiveSynced?: boolean;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -26,6 +27,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   isTeacherMode,
   onToggleTeacherMode,
   onLogout,
+  isLiveSynced = true,
 }) => {
   const getGreeting = () => {
     if (isTeacherMode && currentTeacher) {
@@ -76,6 +78,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </span>
             )
           )}
+
+          {/* Real-time Multi-Device Sync Indicator */}
+          <span 
+            title="Real-time multi-device database synchronized" 
+            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Live Sync</span>
+          </span>
         </div>
         <p className="text-sm sm:text-base text-[#40535e] mt-1 max-w-2xl">
           {getSubtext()}
