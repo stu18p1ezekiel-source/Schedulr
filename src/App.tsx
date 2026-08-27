@@ -373,52 +373,59 @@ export default function App() {
       .map((hw) => getHomeworkForStudent(hw, currentStudent?.id));
   }, [homeworkList, currentStudent]);
 
-  // Homework Handlers with individual per-student submission tracking & Real-time Server Sync
+  // Homework Handlers with individual per-student submission tracking & Real-time Server/Cloud Sync
   const handleToggleHomework = (id: string) => {
     const studentId = currentStudent?.id;
     
     // 1. Optimistic local state update
-    setHomeworkList(prev =>
-      prev.map(item => {
-        if (item.id !== id) return item;
+    const updatedList = homeworkList.map(item => {
+      if (item.id !== id) return item;
 
-        if (!studentId) {
-          return { ...item, completed: !item.completed };
-        }
+      if (!studentId) {
+        return { ...item, completed: !item.completed };
+      }
 
-        const existingSub = item.submissions?.[studentId];
-        const newCompleted = existingSub ? !existingSub.completed : !item.completed;
-        const updatedSub: StudentSubmission = {
-          studentId,
-          studentName: currentStudent?.name || 'Student',
-          studentClass: currentStudent?.classId || item.targetClass,
-          studentAvatar: currentStudent?.avatarUrl,
-          submissionStatus: newCompleted ? 'approved' : 'not_submitted',
-          completed: newCompleted,
-          proofImageUrl: existingSub?.proofImageUrl,
-          studentNotes: existingSub?.studentNotes,
-          submittedAt: existingSub?.submittedAt,
-          teacherFeedback: existingSub?.teacherFeedback,
-          reviewedByTeacherName: existingSub?.reviewedByTeacherName,
-          reviewedAt: existingSub?.reviewedAt,
-        };
+      const existingSub = item.submissions?.[studentId];
+      const newCompleted = existingSub ? !existingSub.completed : !item.completed;
+      const updatedSub: StudentSubmission = {
+        studentId,
+        studentName: currentStudent?.name || 'Student',
+        studentClass: currentStudent?.classId || item.targetClass,
+        studentAvatar: currentStudent?.avatarUrl,
+        submissionStatus: newCompleted ? 'approved' : 'not_submitted',
+        completed: newCompleted,
+        proofImageUrl: existingSub?.proofImageUrl,
+        studentNotes: existingSub?.studentNotes,
+        submittedAt: existingSub?.submittedAt,
+        teacherFeedback: existingSub?.teacherFeedback,
+        reviewedByTeacherName: existingSub?.reviewedByTeacherName,
+        reviewedAt: existingSub?.reviewedAt,
+      };
 
-        const newSubmissions = {
-          ...(item.submissions || {}),
-          [studentId]: updatedSub,
-        };
+      const newSubmissions = {
+        ...(item.submissions || {}),
+        [studentId]: updatedSub,
+      };
 
-        return {
-          ...item,
-          submissions: newSubmissions,
-          ...(item.targetAudience === 'SINGLE_STUDENT' || item.studentId === studentId ? { completed: newCompleted } : {}),
-        };
-      })
-    );
+      return {
+        ...item,
+        submissions: newSubmissions,
+        ...(item.targetAudience === 'SINGLE_STUDENT' || item.studentId === studentId ? { completed: newCompleted } : {}),
+      };
+    });
 
-    // 2. Broadcast change to all devices via server
+    setHomeworkList(updatedList);
+
+    // 2. Broadcast change to all devices worldwide
     if (studentId) {
-      toggleHomeworkApi(id, studentId, currentStudent?.name, currentStudent?.classId, currentStudent?.avatarUrl);
+      toggleHomeworkApi(
+        id,
+        studentId,
+        currentStudent?.name,
+        currentStudent?.classId,
+        currentStudent?.avatarUrl,
+        { events, homework: updatedList, posts, students }
+      );
     }
   };
 
@@ -443,43 +450,47 @@ export default function App() {
     };
 
     // 1. Optimistic update
-    setHomeworkList(prev =>
-      prev.map(item => {
-        if (item.id !== homeworkId) return item;
+    const updatedList: HomeworkItem[] = homeworkList.map(item => {
+      if (item.id !== homeworkId) return item;
 
-        const newSubmissions = {
-          ...(item.submissions || {}),
-          [studentId]: newSubmission,
-        };
+      const newSubmissions = {
+        ...(item.submissions || {}),
+        [studentId]: newSubmission,
+      };
 
-        return {
-          ...item,
-          submissions: newSubmissions,
-          // Backwards compatibility for single-student assignments or initial review
-          ...(item.targetAudience === 'SINGLE_STUDENT' || item.studentId === studentId || !item.submittedByStudentId || item.submittedByStudentId === studentId ? {
-            submissionStatus: 'pending_approval',
-            completed: false,
-            proofImageUrl,
-            studentNotes: studentNotes || undefined,
-            submittedAt: currentTimestamp,
-            submittedByStudentId: studentId,
-            submittedByStudentName: studentName,
-            submittedByStudentClass: studentClass,
-            submittedByStudentAvatar: studentAvatar,
-          } : {}),
-        };
-      })
-    );
-
-    // 2. Broadcast change to all devices via server
-    submitHomeworkProofApi(homeworkId, {
-      studentId,
-      studentName,
-      studentClass,
-      studentAvatar,
-      proofImageUrl,
-      studentNotes,
+      return {
+        ...item,
+        submissions: newSubmissions,
+        // Backwards compatibility for single-student assignments or initial review
+        ...(item.targetAudience === 'SINGLE_STUDENT' || item.studentId === studentId || !item.submittedByStudentId || item.submittedByStudentId === studentId ? {
+          submissionStatus: 'pending_approval' as const,
+          completed: false,
+          proofImageUrl,
+          studentNotes: studentNotes || undefined,
+          submittedAt: currentTimestamp,
+          submittedByStudentId: studentId,
+          submittedByStudentName: studentName,
+          submittedByStudentClass: studentClass,
+          submittedByStudentAvatar: studentAvatar,
+        } : {}),
+      };
     });
+
+    setHomeworkList(updatedList);
+
+    // 2. Broadcast change to all devices worldwide
+    submitHomeworkProofApi(
+      homeworkId,
+      {
+        studentId,
+        studentName,
+        studentClass,
+        studentAvatar,
+        proofImageUrl,
+        studentNotes,
+      },
+      { events, homework: updatedList, posts, students }
+    );
 
     showNotification({
       type: 'homework',
@@ -494,45 +505,49 @@ export default function App() {
     const targetHw = homeworkList.find(h => h.id === homeworkId);
 
     // 1. Optimistic update
-    setHomeworkList(prev =>
-      prev.map(item => {
-        if (item.id !== homeworkId) return item;
+    const updatedList: HomeworkItem[] = homeworkList.map(item => {
+      if (item.id !== homeworkId) return item;
 
-        const newSubmissions = { ...(item.submissions || {}) };
-        const targetStudentId = studentId || item.submittedByStudentId || Object.keys(newSubmissions)[0];
+      const newSubmissions = { ...(item.submissions || {}) };
+      const targetStudentId = studentId || item.submittedByStudentId || Object.keys(newSubmissions)[0];
 
-        if (targetStudentId && newSubmissions[targetStudentId]) {
-          newSubmissions[targetStudentId] = {
-            ...newSubmissions[targetStudentId],
-            submissionStatus: status,
-            completed: status === 'approved',
-            teacherFeedback: feedback || (status === 'approved' ? 'Verified by faculty counselor.' : 'Revision requested.'),
-            reviewedByTeacherName: currentTeacher?.name || 'Faculty Counselor',
-            reviewedAt: currentTimestamp,
-          };
-        }
-
-        return {
-          ...item,
-          submissions: newSubmissions,
-          ...(targetStudentId === item.submittedByStudentId || !item.submittedByStudentId ? {
-            submissionStatus: status,
-            completed: status === 'approved',
-            teacherFeedback: feedback || (status === 'approved' ? 'Verified by faculty counselor.' : 'Revision requested.'),
-            reviewedByTeacherName: currentTeacher?.name || 'Faculty Counselor',
-            reviewedAt: currentTimestamp,
-          } : {}),
+      if (targetStudentId && newSubmissions[targetStudentId]) {
+        newSubmissions[targetStudentId] = {
+          ...newSubmissions[targetStudentId],
+          submissionStatus: status,
+          completed: status === 'approved',
+          teacherFeedback: feedback || (status === 'approved' ? 'Verified by faculty counselor.' : 'Revision requested.'),
+          reviewedByTeacherName: currentTeacher?.name || 'Faculty Counselor',
+          reviewedAt: currentTimestamp,
         };
-      })
-    );
+      }
 
-    // 2. Broadcast change to all devices via server
-    reviewSubmissionApi(homeworkId, {
-      status,
-      feedback,
-      studentId,
-      teacherName: currentTeacher?.name,
+      return {
+        ...item,
+        submissions: newSubmissions,
+        ...(targetStudentId === item.submittedByStudentId || !item.submittedByStudentId ? {
+          submissionStatus: status,
+          completed: status === 'approved',
+          teacherFeedback: feedback || (status === 'approved' ? 'Verified by faculty counselor.' : 'Revision requested.'),
+          reviewedByTeacherName: currentTeacher?.name || 'Faculty Counselor',
+          reviewedAt: currentTimestamp,
+        } : {}),
+      };
     });
+
+    setHomeworkList(updatedList);
+
+    // 2. Broadcast change to all devices worldwide
+    reviewSubmissionApi(
+      homeworkId,
+      {
+        status,
+        feedback,
+        studentId,
+        teacherName: currentTeacher?.name,
+      },
+      { events, homework: updatedList, posts, students }
+    );
 
     showNotification({
       type: 'homework',
@@ -551,11 +566,11 @@ export default function App() {
       completed: false,
     };
 
-    // 1. Optimistic update
-    setHomeworkList(prev => [newItem, ...prev]);
+    const updatedList = [newItem, ...homeworkList];
+    setHomeworkList(updatedList);
 
-    // 2. Broadcast change to all devices via server
-    createHomeworkApi(newHwData);
+    // Broadcast change to all devices worldwide
+    createHomeworkApi(newHwData, { events, homework: updatedList, posts, students });
 
     showNotification({
       type: 'homework',
@@ -566,8 +581,9 @@ export default function App() {
   };
 
   const handleDeleteHomework = (id: string) => {
-    setHomeworkList(prev => prev.filter(item => item.id !== id));
-    deleteHomeworkApi(id);
+    const updatedList = homeworkList.filter(item => item.id !== id);
+    setHomeworkList(updatedList);
+    deleteHomeworkApi(id, { events, homework: updatedList, posts, students });
   };
 
   // Event Handlers with Real-time Multi-device Sync
@@ -576,7 +592,8 @@ export default function App() {
       ...newEventData,
       id: `ev-${Date.now()}`,
     };
-    setEvents(prev => [...prev, newItem]);
+    const updatedEvents = [...events, newItem];
+    setEvents(updatedEvents);
 
     // Also automatically create and post to the Faculty Bulletins (Posts feed)
     const counselorName = newEventData.counselors?.[0] || currentTeacher?.name || 'Faculty Advisor';
@@ -621,10 +638,11 @@ export default function App() {
       likedByCurrentUser: false,
     };
 
-    setPosts(prev => [eventPostItem, ...prev]);
+    const updatedPosts = [eventPostItem, ...posts];
+    setPosts(updatedPosts);
 
-    // Broadcast event + auto-generated post to all devices via server
-    createEventApi(newEventData, true);
+    // Broadcast event + auto-generated post to all devices worldwide
+    createEventApi(newEventData, true, { events: updatedEvents, homework: homeworkList, posts: updatedPosts, students });
 
     let audienceDetail = 'Target: All Classes (School-wide)';
     if (newEventData.targetAudience === 'CLASS') {
@@ -646,11 +664,12 @@ export default function App() {
   const handleDeleteEvent = (id: string) => {
     if (!isTeacherMode) return;
     const deletedItem = events.find(item => item.id === id);
-    setEvents(prev => prev.filter(item => item.id !== id));
+    const updatedEvents = events.filter(item => item.id !== id);
+    setEvents(updatedEvents);
     if (selectedEvent?.id === id) {
       setSelectedEvent(null);
     }
-    deleteEventApi(id);
+    deleteEventApi(id, { events: updatedEvents, homework: homeworkList, posts, students });
     showNotification({
       type: 'event',
       title: 'Event Removed',
@@ -667,10 +686,11 @@ export default function App() {
       likesCount: 0,
       likedByCurrentUser: false,
     };
-    setPosts(prev => [newItem, ...prev]);
+    const updatedPosts = [newItem, ...posts];
+    setPosts(updatedPosts);
 
-    // Broadcast post to all devices via server
-    createPostApi(newPostData);
+    // Broadcast post to all devices worldwide
+    createPostApi(newPostData, { events, homework: homeworkList, posts: updatedPosts, students });
 
     const targetDesc = newPostData.targetClass && newPostData.targetClass !== 'ALL'
       ? `Class ${newPostData.targetClass}`
@@ -687,8 +707,9 @@ export default function App() {
   const handleDeletePost = (id: string) => {
     if (!isTeacherMode) return;
     const deletedItem = posts.find(item => item.id === id);
-    setPosts(prev => prev.filter(item => item.id !== id));
-    deletePostApi(id);
+    const updatedPosts = posts.filter(item => item.id !== id);
+    setPosts(updatedPosts);
+    deletePostApi(id, { events, homework: homeworkList, posts: updatedPosts, students });
     showNotification({
       type: 'post',
       title: 'Post Removed',
@@ -698,20 +719,19 @@ export default function App() {
   };
 
   const handleToggleLike = (postId: string) => {
-    setPosts(prev =>
-      prev.map(p => {
-        if (p.id === postId) {
-          const isLiked = p.likedByCurrentUser;
-          return {
-            ...p,
-            likedByCurrentUser: !isLiked,
-            likesCount: isLiked ? p.likesCount - 1 : p.likesCount + 1,
-          };
-        }
-        return p;
-      })
-    );
-    togglePostLikeApi(postId);
+    const updatedPosts = posts.map(p => {
+      if (p.id === postId) {
+        const isLiked = p.likedByCurrentUser;
+        return {
+          ...p,
+          likedByCurrentUser: !isLiked,
+          likesCount: isLiked ? p.likesCount - 1 : p.likesCount + 1,
+        };
+      }
+      return p;
+    });
+    setPosts(updatedPosts);
+    togglePostLikeApi(postId, { events, homework: homeworkList, posts: updatedPosts, students });
   };
 
   // Student & Teacher Login Handlers
